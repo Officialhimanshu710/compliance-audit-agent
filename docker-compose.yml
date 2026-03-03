@@ -1,0 +1,16 @@
+services:
+  # Container 1: The Backend Brain
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  # Container 2: The Frontend UI
+  frontend:
+    build: .
+    ports:
+      - "8501:8501"
+    command: streamlit run app.py --server.address 0.0.0.0
+    depends_on:
+      - api # Wait for the backend to start before starting the UI

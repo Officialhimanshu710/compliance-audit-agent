@@ -1,32 +1,37 @@
 import streamlit as st
-import os
-import tempfile
-from rag_utils import build_vector_store
-from agent import AuditAgent
-from dotenv import load_dotenv
+import requests
 
-load_dotenv()
+# This is the internal URL where the Streamlit container talks to the API container
+API_BASE_URL = "http://api:8000/api"
+
 st.set_page_config(page_title="AI Compliance Auditor", layout="wide")
 st.title("🤖 AI Audit Agent")
 
+# --- SIDEBAR: POLICY UPLOAD ---
 st.sidebar.header("1. Upload Policy")
 uploaded_policy = st.sidebar.file_uploader("Upload Policy PDF", type="pdf")
 
-if uploaded_policy is not None:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-        tmp_file.write(uploaded_policy.read())
-        temp_policy_path = tmp_file.name
-    
-    st.sidebar.success("PDF Uploaded!")
-    
-    if st.sidebar.button("Process Policy"):
-        with st.spinner("Reading rules..."):
-            db = build_vector_store(temp_policy_path)
-            st.session_state['vector_store'] = db
+if st.sidebar.button("Process Policy"):
+    if uploaded_policy is not None:
+        with st.spinner("Reading rules and building knowledge base..."):
             
-            st.sidebar.success("Knowledge Base Ready! ✅")
+            # Package the PDF and send it to FastAPI Endpoint 1
+            files = {"file": (uploaded_policy.name, uploaded_policy.getvalue(), "application/pdf")}
+            try:
+                response = requests.post(f"{API_BASE_URL}/upload-policy", files=files)
+                if response.status_code == 200:
+                    st.sidebar.success("Knowledge Base Ready! ✅")
+                else:
+                    st.sidebar.error(f"Error: {response.text}")
+            except Exception as e:
+                st.sidebar.error(f"Backend connection failed: {e}")
+    else:
+        st.sidebar.warning("Please upload a PDF first.")
 
+# --- MAIN CONTENT: INVOICE AUDIT ---
 st.header("2. Provide Invoice")
+
+# Your tabs for Upload vs Camera are back!
 tab1, tab2 = st.tabs(["📁 Upload Image", "📸 Take Photo"])
 
 input_image = None
@@ -43,15 +48,22 @@ with tab2:
 if input_image is not None:
     st.image(input_image, caption="Invoice to Audit", use_column_width=True)
     
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
-        tmp_img.write(input_image.read())
-        temp_img_path = tmp_img.name
-
     if st.button("Run Compliance Check"):
-        if 'vector_store' not in st.session_state:
-            st.error("Please process the Policy PDF first!")
-        else:
-            with st.spinner("Agent is working..."):
-                agent = AuditAgent()
-                result = agent.analyze_invoice(temp_img_path, st.session_state['vector_store'])
-                st.write(result)
+        with st.spinner("Agent is working..."):
+            
+            # Package the image (from upload OR camera) and send it to FastAPI Endpoint 2
+            files = {"invoice_image": (input_image.name, input_image.getvalue(), "image/jpeg")}
+            try:
+                response = requests.post(f"{API_BASE_URL}/run-audit", files=files)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    st.success("Audit Complete!")
+                    st.write("### Findings:")
+                    st.write(result["findings"])
+                elif response.status_code == 400:
+                    st.error("Please process the Policy PDF in the sidebar first!")
+                else:
+                    st.error(f"Backend Error: {response.text}")
+            except Exception as e:
+                st.error(f"Backend connection failed: {e}")

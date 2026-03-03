@@ -4,3 +4,7 @@ venv/
 .venv/
 .streamlit/
 .DS_Store
+*.pdf
+*.jpg
+*.jpeg
+*.png
